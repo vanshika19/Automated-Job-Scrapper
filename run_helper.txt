@@ -1,0 +1,6 @@
+cd /Users/vanshikasingh/Applications/job-scrapper
+source .venv/bin/activate
+python enrich_investor_workbooks.py              # all three (skips rows that already have both URLs)
+python enrich_investor_workbooks.py --only vc    # just VC
+python enrich_investor_workbooks.py --only pe    # just PE
+python enrich_investor_workbooks.py --only family

@@ -1,0 +1,25 @@
+pandas>=2.0
+openpyxl>=3.1
+ddgs>=9.0
+requests>=2.31
+beautifulsoup4>=4.12
+lxml>=5.0
+numpy>=1.26
+
+# storage
+sqlalchemy>=2.0
+alembic>=1.13
+psycopg[binary]>=3.1   ; python_version >= "3.10"   # postgres driver (optional at runtime)
+
+# api
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9
+
+# parsing / ai
+pdfplumber>=0.11
+sentence-transformers>=2.7
+openai>=1.12
+
+# js-rendered career pages (run `playwright install chromium` once after install)
+playwright>=1.40

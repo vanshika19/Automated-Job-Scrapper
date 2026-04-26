@@ -1,0 +1,14 @@
+# supercronic crontab — runs inside the scraper container.
+# Format: m h dom mon dow command   (no user field)
+
+# ATS scrape every 6 hours.
+0 */6 * * *   /usr/local/bin/scrape.sh ats
+
+# Career-page (HTML) scrape twice a day.
+30 6,18 * * * /usr/local/bin/scrape.sh career
+
+# Playwright (JS-rendered) scrape once a day, off-peak.
+15 3 * * *    /usr/local/bin/scrape.sh playwright
+
+# Mark stale postings as closed once a day.
+0 4 * * *     python -m job_scraper export /app/data/jobs_open.xlsx

@@ -1,0 +1,50 @@
+flowchart TD
+
+%% ---------------- LAYERS ----------------
+subgraph L1["Layer 1: Input and Scheduling"]
+  A["Company Registry<br/>CSV / Excel<br/>company, careers_url, linkedin_url"]
+  B["Scheduler<br/>Cron / AWS EventBridge / Render Cron"]
+end
+
+subgraph L2["Layer 2: Scraping and Source Connectors"]
+  C["Scraper Engine"]
+  C1["Career Page Scraper<br/>Playwright / BeautifulSoup"]
+  C2["ATS Scraper<br/>Greenhouse / Lever APIs"]
+  C3["LinkedIn Scraper<br/>Apify Actors"]
+  C4["Startup and VC LinkedIn Pages Scraper<br/>Known job-posting pages"]
+end
+
+subgraph L3["Layer 3: Processing and Matching"]
+  D["Parser + Normalizer<br/>Python + Pandas"]
+  E["Rule-Based Filter<br/>Keyword Filtering"]
+  F["AI Matching Engine<br/>Resume vs Job Matching<br/>OpenAI / Sentence Transformers"]
+  G["Deduplication Layer<br/>Hash: company+role+link"]
+end
+
+subgraph L4["Layer 4: Storage and Delivery"]
+  H["Database<br/>SQLite / PostgreSQL"]
+  H2["Excel Export<br/>Pandas"]
+  I["Dashboard<br/>Streamlit / React"]
+end
+
+%% ---------------- FLOW ----------------
+A --> B
+B --> C
+
+C --> C1
+C --> C2
+C --> C3
+C --> C4
+
+C1 --> D
+C2 --> D
+C3 --> D
+C4 --> D
+
+D --> E
+E --> F
+F --> G
+G --> H
+G --> H2
+
+H --> I

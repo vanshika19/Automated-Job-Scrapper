@@ -1,0 +1,34 @@
+# Heavy image for the scraping cron worker: Python + Playwright + Chromium.
+# Microsoft's official Playwright image ships with the matching Chromium build.
+FROM mcr.microsoft.com/playwright/python:v1.47.0-jammy
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# supercronic = container-friendly cron (single static binary, runs as PID 1).
+ARG SUPERCRONIC_URL=https://github.com/aptible/supercronic/releases/download/v0.2.29/supercronic-linux-amd64
+ARG SUPERCRONIC_SHA1=cd48d45c4b10f3f0bfdd3a57d054cd05ac96812b
+RUN curl -fsSLo /usr/local/bin/supercronic "$SUPERCRONIC_URL" \
+ && echo "$SUPERCRONIC_SHA1  /usr/local/bin/supercronic" | sha1sum -c - \
+ && chmod +x /usr/local/bin/supercronic
+
+COPY requirements.txt ./
+RUN pip install -r requirements.txt
+
+COPY job_scraper/ ./job_scraper/
+COPY migrations/ ./migrations/
+COPY alembic.ini ./
+COPY *.py ./
+COPY *_structured.xlsx ./
+COPY docker/crontab /etc/crontab
+COPY docker/scrape.sh /usr/local/bin/scrape.sh
+COPY docker/wait-for-db.sh /usr/local/bin/wait-for-db.sh
+RUN chmod +x /usr/local/bin/scrape.sh /usr/local/bin/wait-for-db.sh
+
+ENV PYTHONPATH=/app \
+    STORAGE_AUTO_CREATE=0
+
+CMD ["bash", "-c", "wait-for-db.sh && python -m job_scraper migrate upgrade head && python -m job_scraper init-db && supercronic /etc/crontab"]

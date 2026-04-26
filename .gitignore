@@ -1,0 +1,4 @@
+# Local environment files (use .env.example as the tracked template)
+.env
+.env.local
+.env.*.local

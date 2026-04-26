@@ -98,7 +98,9 @@ def main() -> None:
         m = df["Company Name"] == company
         if not m.any():
             continue
+
         idx = df.index[m][0]
+        
         for k, v in cols.items():
             df.at[idx, k] = v
     df.to_excel(XLSX, sheet_name=SHEET, index=False)

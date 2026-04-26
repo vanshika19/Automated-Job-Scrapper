@@ -28,13 +28,15 @@ You can configure several tokens by separating them with commas
 
 ## Public vs protected
 
-| Path             | Auth     |
-|------------------|----------|
-| `GET /api/health`| Public   |
-| `GET /api/stats` | Required |
+
+| Path                 | Auth     |
+| -------------------- | -------- |
+| `GET /api/health`    | Public   |
+| `GET /api/stats`     | Required |
 | `GET /api/companies` | Required |
-| `GET /api/jobs`  | Required |
-| `POST /api/match`| Required |
+| `GET /api/jobs`      | Required |
+| `POST /api/match`    | Required |
+
 
 `/api/health` reports `auth_required: true|false` so the dashboard knows
 whether to surface the token UI.
@@ -51,3 +53,4 @@ header).
 ```bash
 curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8000/api/stats
 ```
+

@@ -2,3 +2,12 @@
 .env
 .env.local
 .env.*.local
+
+# Python bytecode caches
+__pycache__/
+*.pyc
+*.pyo
+
+# Pytest / coverage caches
+.pytest_cache/
+.coverage

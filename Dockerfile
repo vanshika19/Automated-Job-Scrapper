@@ -15,8 +15,14 @@ RUN apt-get update \
 
 # Install Python deps without playwright (the API doesn't render JS).
 COPY requirements.txt ./
-RUN sed '/^playwright/d' requirements.txt > requirements.api.txt \
+RUN python - <<'PY' \
  && pip install -r requirements.api.txt
+from pathlib import Path
+
+reqs = Path("requirements.txt").read_text().splitlines()
+filtered = [line for line in reqs if not line.strip().startswith("playwright")]
+Path("requirements.api.txt").write_text("\n".join(filtered) + "\n")
+PY
 
 COPY job_scraper/ ./job_scraper/
 COPY migrations/ ./migrations/

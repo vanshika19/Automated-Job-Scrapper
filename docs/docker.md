@@ -2,12 +2,14 @@
 
 The compose file spins up four services:
 
-| service    | image                                          | role                                       |
-|------------|------------------------------------------------|--------------------------------------------|
-| `db`       | `postgres:16-alpine`                           | persistent storage                         |
-| `api`      | built from `Dockerfile`                        | FastAPI on `:8000` (and `init-db` on boot) |
-| `scraper`  | built from `Dockerfile.scraper` (Playwright)   | supercronic running ATS / career / Playwright scrapes |
-| `frontend` | built from `frontend/Dockerfile` (nginx + Vite build) | dashboard on `:8080`, proxies `/api` -> `api` |
+
+| service    | image                                                 | role                                                  |
+| ---------- | ----------------------------------------------------- | ----------------------------------------------------- |
+| `db`       | `postgres:16-alpine`                                  | persistent storage                                    |
+| `api`      | built from `Dockerfile`                               | FastAPI on `:8000` (and `init-db` on boot)            |
+| `scraper`  | built from `Dockerfile.scraper` (Playwright)          | supercronic running ATS / career / Playwright scrapes |
+| `frontend` | built from `frontend/Dockerfile` (nginx + Vite build) | dashboard on `:8080`, proxies `/api` -> `api`         |
+
 
 ## First run
 
@@ -17,8 +19,8 @@ docker compose build
 docker compose up -d
 ```
 
-- API:        http://localhost:8000/api/health
-- Dashboard:  http://localhost:8080
+- API:        [http://localhost:8000/api/health](http://localhost:8000/api/health)
+- Dashboard:  [http://localhost:8080](http://localhost:8080)
 
 The `api` container runs `python -m job_scraper init-db` on every start, which
 loads the four `*_structured.xlsx` registries into Postgres. After that the
@@ -70,10 +72,11 @@ pipeline's summary JSON.
 ## Production notes
 
 - Replace the default Postgres password in `.env` and consider rotating into
-  a managed Postgres (RDS, Cloud SQL, Neon).
+a managed Postgres (RDS, Cloud SQL, Neon).
 - The `hf_cache` volume keeps the sentence-transformers model warm across
-  container restarts (~80MB). For OpenAI embeddings, set `OPENAI_API_KEY` and
-  the matcher swaps automatically.
+container restarts (~80MB). For OpenAI embeddings, set `OPENAI_API_KEY` and
+the matcher swaps automatically.
 - Behind a reverse proxy (Cloudflare, ALB, etc.) terminate TLS in front of
-  the `frontend` container; nginx already handles SPA routing and `/api`
-  proxying.
+the `frontend` container; nginx already handles SPA routing and `/api`
+proxying.
+

@@ -274,7 +274,7 @@ npm install                            # first time only
 npm run dev                            # Vite dev server on :5173
 ```
 
-Open **[http://localhost:5173](http://localhost:5173)**. Vite proxies `/api/*` to FastAPI on `:8000`, so
+Open **[http://localhost:5173](http://localhost:5173)**. Vite proxies `/api/`* to FastAPI on `:8000`, so
 the same auth flow applies — paste the `API_TOKEN` you printed earlier when
 prompted.
 
@@ -342,8 +342,8 @@ This is the data flow regardless of which path you chose:
   - `ats`        → `scrapers/ats.py` (Greenhouse + Lever JSON APIs)
   - `career`     → `scrapers/career_page.py` (BeautifulSoup anchor harvesting)
   - `playwright` → `scrapers/playwright_page.py` + per-host extractors in
-             `scrapers/extractors/` (Ashby / Workday / SmartRecruiters /
-             Greenhouse-iframe / generic)
+   `scrapers/extractors/` (Ashby / Workday / SmartRecruiters /
+   Greenhouse-iframe / generic)
   - `linkedin`   → `scrapers/linkedin.py` (stub; uses Apify when `APIFY_TOKEN`)
 3. **Per-company loop** — for every company with a relevant URL the scraper
   yields raw dict rows. `parser.py` normalises them into `JobPosting`

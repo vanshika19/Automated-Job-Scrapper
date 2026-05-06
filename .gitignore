@@ -11,3 +11,8 @@ __pycache__/
 # Pytest / coverage caches
 .pytest_cache/
 .coverage
+
+# Local workbook backups & run logs (keep registry source xlsx tracked)
+*.bak.xlsx
+*before*reverify*.xlsx
+logs/

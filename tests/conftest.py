@@ -13,6 +13,13 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
+@pytest.fixture(autouse=True)
+def disable_scraper_network_fallbacks_by_default(monkeypatch):
+    """Unit tests must not launch Playwright or hit real LinkedIn."""
+    monkeypatch.setenv("CAREER_PLAYWRIGHT_FALLBACK", "0")
+    monkeypatch.setenv("LINKEDIN_PLAYWRIGHT", "0")
+
+
 def _fake_response(text: str, *, status: int = 200) -> SimpleNamespace:
     """Minimal stand-in for `requests.Response` — only the fields scrapers touch."""
     return SimpleNamespace(text=text, status_code=status, ok=status == 200)

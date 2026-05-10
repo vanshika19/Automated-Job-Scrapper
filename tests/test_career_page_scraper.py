@@ -96,21 +96,14 @@ def test_keeps_cross_domain_greenhouse_links(stub_http_get, fake_response):
         ("ashby", "https://jobs.ashbyhq.com/acme/role-1"),
     ],
 )
-def test_lever_and_ashby_urls_are_filtered_in_typical_form(
-    stub_http_get, fake_response, ats_host, href
-):
-    """KNOWN GAP: career_page.py allowlists lever.co / ashbyhq.com hosts, but its
-    `_JOB_HINTS` regex still requires `/jobs/`, `/careers/`, etc. in the URL path.
-    Typical Lever/Ashby URLs are `/<company>/<uuid>` (no job-hint segment) so they
-    get dropped. This test pins that behavior — the ATS scraper or Playwright is
-    the right path for these hosts.
-    """
+def test_lever_and_ashby_board_urls_are_kept(stub_http_get, fake_response, ats_host, href):
+    """Lever/Ashby board URLs use /{company}/{role-id} paths; treat as job links."""
     html = f'<a href="{href}">Open Role</a>'
     stub_http_get(lambda url: fake_response(html))
 
     out = CareerPageScraper().fetch(_company())
 
-    assert out == [], f"{ats_host} URL without /jobs/ in path should be filtered"
+    assert [j["url"] for j in out] == [href]
 
 
 def test_lever_or_ashby_links_with_jobs_in_path_are_kept(stub_http_get, fake_response):

@@ -71,6 +71,7 @@ class PlaywrightScraper:
         page = ctx.new_page()
         try:
             page.goto(url, timeout=45_000, wait_until="domcontentloaded")
+            page.wait_for_timeout(self.wait_ms)
             extractor = pick(url)
             try:
                 extractor.prepare(page)

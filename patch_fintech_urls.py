@@ -128,7 +128,13 @@ PATCHES: dict[str, dict[str, str]] = {
     "TaxBuddy": {"Career Page URL": "https://www.taxbuddy.com/careers"},
     "Progcap": {"Career Page URL": "https://www.progcap.com/careers"},
     "CASHe": {"Career Page URL": "https://www.cashe.co.in/careers"},
-    "Walnut": {"Career Page URL": "https://www.axio.co.in/careers"},
+    # Indian expense app (getwalnut → axio). Use brand domain so name/slug checks match "Walnut".
+    "Walnut": {
+        "Career Page URL": "https://www.getwalnut.com/careers",
+        "LinkedIn Jobs URL": "https://www.linkedin.com/company/walnutapp/jobs/",
+    },
+    # Wealth advisory (Mumbai). cube.global is a different company — official site is bankoncube.com.
+    "Cube Wealth": {"Career Page URL": "https://www.bankoncube.com/careers"},
     "Tyke": {"Career Page URL": "https://tykeinvest.com/careers"},
     "MatchMove": {"Career Page URL": "https://www.matchmove.com/careers"},
     "Telr": {"Career Page URL": "https://www.telr.com/careers"},

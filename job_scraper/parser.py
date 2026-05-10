@@ -31,10 +31,16 @@ def _abs_url(url: str | None, base: str | None = None) -> str:
 
 
 def normalize(raw: dict, company: Company, source: str) -> JobPosting:
+    base = company.careers_url
+    if source.startswith("linkedin") and company.linkedin_url:
+        base = company.linkedin_url or base
     return JobPosting(
         company=company.name,
         title=_clean(raw.get("title") or raw.get("name")),
-        url=_abs_url(raw.get("url") or raw.get("absolute_url") or raw.get("hostedUrl"), company.careers_url),
+        url=_abs_url(
+            raw.get("url") or raw.get("absolute_url") or raw.get("hostedUrl"),
+            base,
+        ),
         location=_clean(
             raw.get("location")
             or (raw.get("categories") or {}).get("location")

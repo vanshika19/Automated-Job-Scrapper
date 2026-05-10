@@ -10,6 +10,11 @@ have both URLs filled.
                                                  # (aggregator / wrong domain /
                                                  #  dead link / no career
                                                  #  signals).
+    python enrich_fintech_urls.py --only-segment "BFSI FinTech list 2025"
+                                                 # only that Sub-Segment; blanks
+                                                 # only; other rows untouched.
+    # Prefer applying ``fintech_careers.csv`` first (no network):
+    #   python bfsi_career_csv.py
 """
 
 from __future__ import annotations
@@ -28,6 +33,21 @@ def main(argv: list[str] | None = None) -> None:
         "--reverify",
         action="store_true",
         help="Re-check every existing Career Page URL; replace ones that fail verification.",
+    )
+    p.add_argument(
+        "--only-segment",
+        metavar="VALUE",
+        default=None,
+        help=(
+            "Only process rows whose Sub-Segment (see --segment-column) equals this "
+            "value; fill blank Career / LinkedIn cells only; never overwrite or touch "
+            "other rows. Implies no reverify."
+        ),
+    )
+    p.add_argument(
+        "--segment-column",
+        default="Sub-Segment",
+        help="Column to match against --only-segment (default: %(default)r).",
     )
     p.add_argument(
         "--xlsx",
@@ -49,6 +69,8 @@ def main(argv: list[str] | None = None) -> None:
         location_fallback_col="Region",
         query_context="",
         reverify=args.reverify,
+        segment_filter=args.only_segment,
+        segment_col=args.segment_column,
     )
 
 

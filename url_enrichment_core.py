@@ -534,6 +534,8 @@ def enrich_workbook(
     checkpoint_every: int = 10,
     sleep_between_rows: float = 0.45,
     reverify: bool = False,
+    segment_filter: str | None = None,
+    segment_col: str = "Sub-Segment",
 ) -> None:
     """Add or fill Career Page URL and LinkedIn Jobs URL.
 
@@ -545,6 +547,12 @@ def enrich_workbook(
     the cell is cleared and re-populated via `find_career_page`. LinkedIn URLs
     are only filled if missing — they're a structured slug so re-verification
     is rarely needed.
+
+    With ``segment_filter`` set (e.g. ``"BFSI FinTech list 2025"``), **only**
+    rows whose ``segment_col`` matches are touched. For those rows, **only
+    blank** Career / LinkedIn cells are filled — existing URLs are never
+    overwritten and ``reverify`` is ignored. All other rows are left unchanged
+    (safe for already-corrected companies).
     """
     path = Path(xlsx)
     df = pd.read_excel(path, sheet_name=sheet)
@@ -561,6 +569,62 @@ def enrich_workbook(
 
     total = len(df)
     replaced = 0
+    processed = 0
+
+    if segment_filter is not None:
+        if segment_col not in df.columns:
+            raise KeyError(f"--only-segment requires column {segment_col!r} in {path}")
+        if reverify:
+            print("Note: reverify is disabled when --only-segment is used.", flush=True)
+            reverify = False
+
+        want = segment_filter.strip()
+        eligible = sum(
+            1
+            for _, row in df.iterrows()
+            if str(row.get(segment_col, "") or "").strip() == want
+        )
+        print(
+            f"Segment filter: {want!r} — {eligible} row(s), fill blanks only; other rows unchanged.",
+            flush=True,
+        )
+
+        for i, row in df.iterrows():
+            if str(row.get(segment_col, "") or "").strip() != want:
+                continue
+
+            name = str(row[name_col]).strip()
+            if not name:
+                continue
+            loc = _row_location(row, location_col, location_fallback_col)
+            existing_career = str(row.get("Career Page URL", "")).strip()
+            existing_li = str(row.get("LinkedIn Jobs URL", "")).strip()
+
+            if existing_career and existing_li:
+                continue
+
+            need_career = not existing_career
+            need_li = not existing_li
+            processed += 1
+            print(f"[{processed}/{eligible}] {name} ({loc}) ...", flush=True)
+
+            if need_career:
+                new_url = find_career_page(name, loc, query_context)
+                df.at[i, "Career Page URL"] = new_url
+                print(f"    career → {new_url or '(none)'}", flush=True)
+            if need_li:
+                df.at[i, "LinkedIn Jobs URL"] = find_linkedin_jobs(name, loc, query_context)
+                print(f"    linkedin → {df.at[i, 'LinkedIn Jobs URL'] or '(none)'}", flush=True)
+
+            if processed % checkpoint_every == 0:
+                df.to_excel(path, sheet_name=sheet, index=False)
+                print(f"  checkpoint saved ({processed} segment rows)", flush=True)
+            time.sleep(sleep_between_rows)
+
+        df.to_excel(path, sheet_name=sheet, index=False)
+        print(f"Done. Saved: {path} ({processed} segment row(s) updated)", flush=True)
+        return
+
     for i, row in df.iterrows():
         name = str(row[name_col]).strip()
         if not name:

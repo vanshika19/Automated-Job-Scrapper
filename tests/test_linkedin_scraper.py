@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from job_scraper.models import Company
+from job_scraper.parser import normalize
 from job_scraper.scrapers.linkedin import (
     LinkedInScraper,
     _apify_csv_segments,
+    _employer_from_apify_item,
     merge_linkedin_job_results,
     normalize_linkedin_jobs_url,
     parse_linkedin_company_jobs_html,
@@ -93,3 +97,58 @@ def test_merge_appends_secondary_unique_job_ids():
     pw = [{"title": "Two", "url": "https://www.linkedin.com/jobs/view/20"}]
     merged = merge_linkedin_job_results(apify, pw)
     assert sorted(j["title"] for j in merged) == ["One", "Two"]
+
+
+def test_employer_from_apify_string_and_nested():
+    assert _employer_from_apify_item({"companyName": " Stripe "}) == "Stripe"
+    assert _employer_from_apify_item({"hiringCompany": {"name": "Acme Inc"}}) == "Acme Inc"
+
+
+def test_normalize_prefers_employer_for_posting_company():
+    c = Company(name="WorkbookCo", careers_url="", linkedin_url="")
+    job = normalize(
+        {
+            "title": "PM",
+            "url": "https://www.linkedin.com/jobs/view/1",
+            "__employer__": "Real Employer",
+        },
+        c,
+        "linkedin:apify",
+    )
+    assert job.company == "Real Employer"
+
+
+def test_generic_apify_omits_company_name_and_calls_once(monkeypatch):
+    monkeypatch.setenv("LINKEDIN_APIFY_GENERIC_SEARCH", "1")
+    monkeypatch.setenv("LINKEDIN_APIFY_TITLE", "product manager")
+    monkeypatch.setenv("LINKEDIN_APIFY_LOCATION", "India")
+    monkeypatch.setenv("LINKEDIN_PLAYWRIGHT", "0")
+    payloads: list[dict] = []
+
+    def fake_post(url, json=None, timeout=None):
+        payloads.append(json)
+        fake_r = type("R", (), {})()
+        fake_r.raise_for_status = lambda: None
+        fake_r.json = lambda: [
+            {
+                "title": "PM",
+                "url": "https://www.linkedin.com/jobs/view/99",
+                "companyName": "Stripe",
+            }
+        ]
+        return fake_r
+
+    with patch("job_scraper.scrapers.linkedin.requests.post", side_effect=fake_post):
+        s = LinkedInScraper(token="tok")
+        a = Company(name="FintechA", careers_url="", linkedin_url="https://www.linkedin.com/company/a/jobs/")
+        b = Company(name="FintechB", careers_url="", linkedin_url="https://www.linkedin.com/company/b/jobs/")
+        ra = s.fetch(a)
+        rb = s.fetch(b)
+
+    assert len(payloads) == 1
+    assert "companyName" not in payloads[0]
+    assert payloads[0]["title"] == "product manager"
+    assert payloads[0]["location"] == "India"
+    assert len(ra) == 1
+    assert ra[0]["__employer__"] == "Stripe"
+    assert len(rb) == 0

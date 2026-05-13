@@ -1,5 +1,11 @@
 """LinkedIn company jobs: Apify (when ``APIFY_TOKEN`` is set) plus best-effort page harvest.
 
+Set ``LINKEDIN_APIFY_GENERIC_SEARCH=1`` to run the jobs actor **once** for
+``LINKEDIN_APIFY_TITLE`` × ``LINKEDIN_APIFY_LOCATION`` only (no ``companyName`` filter,
+global LinkedIn search). The first pipeline company row still triggers that run; later
+rows skip the duplicate Apify calls. Job rows use the hiring company from the actor when
+present (see ``__employer__`` / parser).
+
 The company's LinkedIn ``/company/{slug}/jobs/`` page is optionally rendered in headless
 Chromium and ``/jobs/view/{id}`` links are parsed. That pass runs alongside Apify when
 both are enabled so URL-derived listings can complement the actor dataset. The HTML parse
@@ -40,6 +46,34 @@ def _apify_csv_segments(raw: str | None) -> list[str] | None:
     parts = [p.strip() for p in re.split(r"[,;\n]+", raw.strip())]
     out = [p for p in parts if p]
     return out or None
+
+
+def _apify_enabled_generic() -> bool:
+    return os.environ.get("LINKEDIN_APIFY_GENERIC_SEARCH", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _employer_from_apify_item(j: dict[str, Any]) -> str:
+    for key in (
+        "companyName",
+        "company",
+        "hiringCompany",
+        "organizationName",
+        "employerName",
+        "employer",
+    ):
+        v = j.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+        if isinstance(v, dict):
+            name = v.get("name")
+            if isinstance(name, str) and name.strip():
+                return name.strip()
+    return ""
 
 
 def _li_slug(url: str) -> str | None:
@@ -138,6 +172,7 @@ class LinkedInScraper:
         self.max_items = max_items
         self._pw = None
         self._browser = None
+        self._generic_apify_done = False
 
     def close(self) -> None:
         def _work() -> None:
@@ -166,7 +201,13 @@ class LinkedInScraper:
             ) from e
 
     def _fetch_apify(self, company: Company) -> list[dict]:
-        """Call Apify ``bebity/linkedin-jobs-scraper`` with its official input schema."""
+        """Call Apify ``bebity~linkedin-jobs-scraper`` (global search or scoped to ``companyName``)."""
+        generic = _apify_enabled_generic()
+        if generic and self._generic_apify_done:
+            return []
+        if generic:
+            self._generic_apify_done = True
+
         actor = os.environ.get("APIFY_LINKEDIN_ACTOR", _DEFAULT_LINKEDIN_ACTOR).strip()
         rows = max(1, min(self.max_items, 1000))
 
@@ -179,21 +220,29 @@ class LinkedInScraper:
 
         locations = _apify_csv_segments(loc_env)
         if locations is None:
-            locations = [(company.country or "").strip() or "Worldwide"]
+            if generic:
+                locations = ["Worldwide"]
+            else:
+                locations = [(company.country or "").strip() or "Worldwide"]
 
         max_combo = max(1, int(os.environ.get("LINKEDIN_APIFY_MAX_COMBINATIONS", "20")))
         combos = [(t, loc) for t in titles for loc in locations][:max_combo]
         if len(combos) < len(titles) * len(locations):
+            label = "generic LinkedIn jobs" if generic else company.name
             LOG.warning(
                 "LinkedIn Apify: capped title×location combinations at %d for %s",
                 max_combo,
-                company.name,
+                label,
             )
 
-        base_payload: dict[str, Any] = {
-            "rows": rows,
-            "companyName": [company.name.strip()],
-        }
+        base_payload: dict[str, Any] = {"rows": rows}
+        if not generic:
+            base_payload["companyName"] = [company.name.strip()]
+        else:
+            LOG.info(
+                "LinkedIn Apify generic search: %d title×location run(s), no companyName filter",
+                len(combos),
+            )
 
         proxy_raw = os.environ.get("LINKEDIN_APIFY_PROXY_JSON", "").strip()
         if proxy_raw:
@@ -206,6 +255,7 @@ class LinkedInScraper:
         api_url = APIFY_RUN_URL.format(actor=actor, token=self.token)
 
         def norm_job(j: dict) -> dict:
+            emp = _employer_from_apify_item(j)
             return {
                 "title": j.get("title") or j.get("position") or j.get("jobTitle"),
                 "url": j.get("applyUrl")
@@ -217,6 +267,7 @@ class LinkedInScraper:
                 "description": j.get("description") or "",
                 "posted_at": j.get("postedTime") or j.get("postedAt") or "",
                 "__source__": "linkedin:apify",
+                "__employer__": emp,
             }
 
         merged: list[dict] = []
@@ -240,7 +291,7 @@ class LinkedInScraper:
             except requests.RequestException as e:
                 LOG.warning(
                     "Apify request failed for %s (title=%r location=%r): %s",
-                    company.name,
+                    "generic search" if generic else company.name,
                     title,
                     location,
                     e,
@@ -318,8 +369,8 @@ class LinkedInScraper:
         return run_playwright_sync(_work)
 
     def fetch(self, company: Company) -> list[dict]:
-        slug = _li_slug(company.linkedin_url)
-        if not slug:
+        generic = _apify_enabled_generic()
+        if not generic and not _li_slug(company.linkedin_url):
             return []
 
         apify_jobs: list[dict] = []

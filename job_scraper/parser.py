@@ -32,7 +32,7 @@ def _abs_url(url: str | None, base: str | None = None) -> str:
 
 def normalize(raw: dict, company: Company, source: str) -> JobPosting:
     base = company.careers_url
-    if source.startswith("linkedin") and company.linkedin_url:
+    if (source.startswith("linkedin") or source.startswith("linkedin_posts")) and company.linkedin_url:
         base = company.linkedin_url or base
     return JobPosting(
         company=company.name,

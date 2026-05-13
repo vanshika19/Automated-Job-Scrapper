@@ -8,6 +8,7 @@ is brittle (login walls, layout changes); Apify remains the primary source when 
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -18,15 +19,27 @@ import requests
 from bs4 import BeautifulSoup
 
 from ..models import Company
+from .pw_sync_runner import get_sync_playwright, run_playwright_sync
 
 LOG = logging.getLogger(__name__)
 
-APIFY_ACTOR = os.environ.get("APIFY_LINKEDIN_ACTOR", "bebity~linkedin-jobs-scraper")
+# Default matches 🔥 LinkedIn Jobs Scraper (Actor ID BHzefUZlZRKWxkTck, username bebity~linkedin-jobs-scraper).
+# Set ``APIFY_LINKEDIN_ACTOR=BHzefUZlZRKWxkTck`` to pin the console ID — both resolve to the same actor.
+_DEFAULT_LINKEDIN_ACTOR = "bebity~linkedin-jobs-scraper"
 APIFY_RUN_URL = (
     "https://api.apify.com/v2/acts/{actor}/run-sync-get-dataset-items?token={token}"
 )
 
 _LI_VIEW = re.compile(r"linkedin\.com/jobs/view/(\d+)", re.I)
+
+
+def _apify_csv_segments(raw: str | None) -> list[str] | None:
+    """Split env lists on comma, semicolon, or newline. None if ``raw`` is None."""
+    if raw is None:
+        return None
+    parts = [p.strip() for p in re.split(r"[,;\n]+", raw.strip())]
+    out = [p for p in parts if p]
+    return out or None
 
 
 def _li_slug(url: str) -> str | None:
@@ -127,56 +140,121 @@ class LinkedInScraper:
         self._browser = None
 
     def close(self) -> None:
+        def _work() -> None:
+            try:
+                if self._browser is not None:
+                    self._browser.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._browser = None
+            self._pw = None
+
         try:
-            if self._browser is not None:
-                self._browser.close()
-            if self._pw is not None:
-                self._pw.stop()
+            run_playwright_sync(_work)
         except Exception:  # noqa: BLE001
             pass
-        self._browser = None
-        self._pw = None
 
     def _ensure_browser(self) -> None:
         if self._browser is not None:
             return
         try:
-            from playwright.sync_api import sync_playwright
+            self._pw = get_sync_playwright()
+            self._browser = self._pw.chromium.launch(headless=True)
         except ImportError as e:  # pragma: no cover
             raise RuntimeError(
                 "playwright not installed. Run `pip install playwright && playwright install chromium`."
             ) from e
-        self._pw = sync_playwright().start()
-        self._browser = self._pw.chromium.launch(headless=True)
 
-    def _fetch_apify(self, company: Company, slug: str) -> list[dict]:
-        payload: dict[str, Any] = {
-            "companyNames": [slug],
-            "rows": self.max_items,
-        }
-        url = APIFY_RUN_URL.format(actor=APIFY_ACTOR, token=self.token)
-        try:
-            r = requests.post(url, json=payload, timeout=120)
-            r.raise_for_status()
-            data = r.json()
-        except requests.RequestException as e:
-            LOG.warning("Apify request failed for %s: %s", company.name, e)
-            return []
+    def _fetch_apify(self, company: Company) -> list[dict]:
+        """Call Apify ``bebity/linkedin-jobs-scraper`` with its official input schema."""
+        actor = os.environ.get("APIFY_LINKEDIN_ACTOR", _DEFAULT_LINKEDIN_ACTOR).strip()
+        rows = max(1, min(self.max_items, 1000))
 
-        out: list[dict] = []
-        for j in data or []:
-            out.append(
-                {
-                    "title": j.get("title") or j.get("position"),
-                    "url": j.get("link") or j.get("jobUrl"),
-                    "location": j.get("location"),
-                    "department": j.get("department") or "",
-                    "description": j.get("description") or "",
-                    "posted_at": j.get("postedTime") or j.get("postedAt") or "",
-                    "__source__": "linkedin",
-                }
+        title_env = os.environ.get("LINKEDIN_APIFY_TITLE")
+        loc_env = os.environ.get("LINKEDIN_APIFY_LOCATION")
+
+        titles = _apify_csv_segments(title_env)
+        if titles is None:
+            titles = [""]
+
+        locations = _apify_csv_segments(loc_env)
+        if locations is None:
+            locations = [(company.country or "").strip() or "Worldwide"]
+
+        max_combo = max(1, int(os.environ.get("LINKEDIN_APIFY_MAX_COMBINATIONS", "20")))
+        combos = [(t, loc) for t in titles for loc in locations][:max_combo]
+        if len(combos) < len(titles) * len(locations):
+            LOG.warning(
+                "LinkedIn Apify: capped title×location combinations at %d for %s",
+                max_combo,
+                company.name,
             )
-        return out
+
+        base_payload: dict[str, Any] = {
+            "rows": rows,
+            "companyName": [company.name.strip()],
+        }
+
+        proxy_raw = os.environ.get("LINKEDIN_APIFY_PROXY_JSON", "").strip()
+        if proxy_raw:
+            try:
+                base_payload["proxy"] = json.loads(proxy_raw)
+            except json.JSONDecodeError:
+                LOG.warning("LINKEDIN_APIFY_PROXY_JSON is not valid JSON; skipping proxy block")
+
+        timeout_s = int(os.environ.get("LINKEDIN_APIFY_TIMEOUT_SEC", "300"))
+        api_url = APIFY_RUN_URL.format(actor=actor, token=self.token)
+
+        def norm_job(j: dict) -> dict:
+            return {
+                "title": j.get("title") or j.get("position") or j.get("jobTitle"),
+                "url": j.get("applyUrl")
+                or j.get("link")
+                or j.get("jobUrl")
+                or j.get("url"),
+                "location": j.get("location"),
+                "department": j.get("department") or "",
+                "description": j.get("description") or "",
+                "posted_at": j.get("postedTime") or j.get("postedAt") or "",
+                "__source__": "linkedin:apify",
+            }
+
+        merged: list[dict] = []
+        seen: set[str] = set()
+
+        def job_key(job: dict) -> str | None:
+            u = (job.get("url") or "").strip()
+            if not u:
+                return None
+            m = _LI_VIEW.search(u)
+            if m:
+                return f"v:{m.group(1)}"
+            return f"u:{u.lower()}"
+
+        for title, location in combos:
+            payload = {**base_payload, "title": title, "location": location}
+            try:
+                r = requests.post(api_url, json=payload, timeout=timeout_s)
+                r.raise_for_status()
+                data = r.json()
+            except requests.RequestException as e:
+                LOG.warning(
+                    "Apify request failed for %s (title=%r location=%r): %s",
+                    company.name,
+                    title,
+                    location,
+                    e,
+                )
+                continue
+
+            for j in data or []:
+                job = norm_job(j)
+                k = job_key(job)
+                if k and k not in seen:
+                    seen.add(k)
+                    merged.append(job)
+
+        return merged
 
     def _fetch_playwright(self, company: Company) -> list[dict]:
         if os.environ.get("LINKEDIN_PLAYWRIGHT", "1").strip().lower() in (
@@ -195,46 +273,49 @@ class LinkedInScraper:
 
         wait_ms = int(os.environ.get("LINKEDIN_PLAYWRIGHT_WAIT_MS", "5000"))
 
-        try:
-            self._ensure_browser()
-        except Exception as e:  # noqa: BLE001
-            LOG.warning("LinkedIn Playwright unavailable for %s: %s", company.name, e)
-            return []
-
-        ctx = self._browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_0) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
-            )
-        )
-        page = ctx.new_page()
-        try:
-            page.goto(url, timeout=90_000, wait_until="domcontentloaded")
-            page.wait_for_timeout(wait_ms)
+        def _work() -> list[dict]:
             try:
-                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                page.wait_for_timeout(2000)
-            except Exception:  # noqa: BLE001
-                pass
-            html = page.content()
-        except Exception as e:  # noqa: BLE001
-            LOG.warning("LinkedIn page load failed for %s: %s", company.name, e)
-            return []
-        finally:
-            try:
-                ctx.close()
-            except Exception:  # noqa: BLE001
-                pass
+                self._ensure_browser()
+            except Exception as e:  # noqa: BLE001
+                LOG.warning("LinkedIn Playwright unavailable for %s: %s", company.name, e)
+                return []
 
-        jobs = parse_linkedin_company_jobs_html(html)
-        if not jobs:
-            LOG.info(
-                "LinkedIn Playwright returned 0 jobs for %s (login wall or layout change?)",
-                company.name,
+            ctx = self._browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_0) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+                )
             )
-        if len(jobs) > self.max_items:
-            jobs = jobs[: self.max_items]
-        return jobs
+            page = ctx.new_page()
+            try:
+                page.goto(url, timeout=90_000, wait_until="domcontentloaded")
+                page.wait_for_timeout(wait_ms)
+                try:
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    page.wait_for_timeout(2000)
+                except Exception:  # noqa: BLE001
+                    pass
+                html = page.content()
+            except Exception as e:  # noqa: BLE001
+                LOG.warning("LinkedIn page load failed for %s: %s", company.name, e)
+                return []
+            finally:
+                try:
+                    ctx.close()
+                except Exception:  # noqa: BLE001
+                    pass
+
+            jobs = parse_linkedin_company_jobs_html(html)
+            if not jobs:
+                LOG.info(
+                    "LinkedIn Playwright returned 0 jobs for %s (login wall or layout change?)",
+                    company.name,
+                )
+            if len(jobs) > self.max_items:
+                jobs = jobs[: self.max_items]
+            return jobs
+
+        return run_playwright_sync(_work)
 
     def fetch(self, company: Company) -> list[dict]:
         slug = _li_slug(company.linkedin_url)
@@ -243,7 +324,7 @@ class LinkedInScraper:
 
         apify_jobs: list[dict] = []
         if self.token:
-            apify_jobs = self._fetch_apify(company, slug)
+            apify_jobs = self._fetch_apify(company)
         else:
             LOG.debug("LinkedIn: no APIFY_TOKEN for %s", company.name)
 

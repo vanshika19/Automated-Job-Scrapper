@@ -15,6 +15,16 @@ from .pipeline import run
 from .storage import Storage
 
 DEFAULT_DB = Path(__file__).resolve().parent.parent / "jobs.db"
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _load_local_dotenv() -> None:
+    """Load ``REPO_ROOT/.env`` into the process env (file is gitignored)."""
+    try:
+        from dotenv import load_dotenv
+    except ImportError:  # pragma: no cover
+        return
+    load_dotenv(_REPO_ROOT / ".env")
 
 
 def _db_url(args: argparse.Namespace) -> str:
@@ -43,7 +53,23 @@ def cmd_init_db(args: argparse.Namespace) -> int:
 
 
 def cmd_scrape(args: argparse.Namespace) -> int:
-    companies = registry.load_all(args.root)
+    from .scrapers.linkedin_posts import load_standalone_post_companies
+
+    sources = tuple(args.source)
+    standalone = load_standalone_post_companies()
+    if standalone is not None and "linkedin_posts" in sources:
+        if len(sources) > 1:
+            print(
+                "When using a standalone LinkedIn posts URL list (LINKEDIN_POSTS_TARGET_URLS, "
+                "LINKEDIN_POSTS_TARGET_URLS_FILE, or config/linkedin_posts_targets.txt), "
+                "run with --source linkedin_posts only.",
+                file=sys.stderr,
+            )
+            return 2
+        companies = standalone
+    else:
+        companies = registry.load_all(args.root)
+
     if args.segment:
         wanted = {s.lower() for s in args.segment}
         companies = [c for c in companies if c.segment.lower() in wanted]
@@ -161,7 +187,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--source",
         nargs="+",
         default=["ats", "career"],
-        choices=["ats", "career", "playwright", "linkedin"],
+        choices=["ats", "career", "playwright", "linkedin", "linkedin_posts"],
     )
     sp.add_argument("--segment", nargs="+", help="Filter by company segment (e.g. Fintech)")
     sp.add_argument("--only", nargs="+", help="Run only the named companies")
@@ -207,6 +233,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _load_local_dotenv()
     args = build_parser().parse_args(argv)
     _setup_logging(getattr(args, "verbose", False))
     return args.func(args)

@@ -5,10 +5,22 @@ from __future__ import annotations
 from job_scraper.models import Company
 from job_scraper.scrapers.linkedin import (
     LinkedInScraper,
+    _apify_csv_segments,
     merge_linkedin_job_results,
     normalize_linkedin_jobs_url,
     parse_linkedin_company_jobs_html,
 )
+
+
+def test_apify_csv_segments_splits_commas_and_newlines():
+    assert _apify_csv_segments(None) is None
+    assert _apify_csv_segments("  ") is None
+    assert _apify_csv_segments("product manager, associate product manager") == [
+        "product manager",
+        "associate product manager",
+    ]
+    assert _apify_csv_segments("Bangalore,\nIndia") == ["Bangalore", "India"]
+    assert _apify_csv_segments("Chennai;Hyderabad") == ["Chennai", "Hyderabad"]
 
 
 def test_normalize_appends_jobs_to_company_url():
@@ -61,7 +73,7 @@ def test_merge_keeps_primary_when_same_job_id():
         {
             "title": "From Apify",
             "url": "https://www.linkedin.com/jobs/view/1",
-            "__source__": "linkedin",
+            "__source__": "linkedin:apify",
         }
     ]
     pw = [

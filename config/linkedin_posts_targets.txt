@@ -1,0 +1,12 @@
+# LinkedIn company pages for Apify actor A3cAPGpwBEG8RJwse (linkedin_posts source).
+# One URL per line. /posts/ and ?feedView= are stripped; paths become company roots.
+#
+# Enable in .env:  LINKEDIN_POSTS_STANDALONE=1
+# Run:  python -m job_scraper scrape --source linkedin_posts
+# (Requires APIFY_TOKEN; use only this --source when standalone mode is on.)
+
+https://www.linkedin.com/company/pm-interview-prep-club/posts/
+https://www.linkedin.com/company/adwordtv/posts/
+https://www.linkedin.com/company/founders-office-club/posts/
+https://www.linkedin.com/company/vcjobsio/posts/?feedView=all
+https://www.linkedin.com/company/finance-jobs-vacancies/posts/?feedView=all

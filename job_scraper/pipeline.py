@@ -12,8 +12,15 @@ from .dedup import dedupe
 from .filters import FilterRules, apply as apply_filter
 from .models import Company, JobPosting
 from .parser import normalize_many
-from .scrapers import ATSScraper, CareerPageScraper, LinkedInScraper, PlaywrightScraper
+from .scrapers import (
+    ATSScraper,
+    CareerPageScraper,
+    LinkedInPostsScraper,
+    LinkedInScraper,
+    PlaywrightScraper,
+)
 from .scrapers.base import Scraper
+from .scrapers.pw_sync_runner import stop_shared_playwright
 from .storage import Storage
 
 LOG = logging.getLogger("job_scraper.pipeline")
@@ -23,6 +30,7 @@ SOURCE_REGISTRY: dict[str, type[Scraper]] = {
     "career": CareerPageScraper,
     "playwright": PlaywrightScraper,
     "linkedin": LinkedInScraper,
+    "linkedin_posts": LinkedInPostsScraper,
 }
 
 
@@ -108,6 +116,8 @@ def run(
                 close_fn()
             except Exception:  # noqa: BLE001
                 pass
+
+    stop_shared_playwright()
 
     stats.duration_s = round(time.monotonic() - start, 2)
     return stats

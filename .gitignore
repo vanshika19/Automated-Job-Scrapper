@@ -16,3 +16,6 @@ __pycache__/
 *.bak.xlsx
 *before*reverify*.xlsx
 logs/
+
+# Local SQLite database (use init-db / scrape to create)
+jobs.db

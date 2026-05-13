@@ -29,6 +29,7 @@ _JOB_PATH_OR_QUERY = re.compile(
 _ATS_NETLOC_MARKERS = (
     "greenhouse.io",
     "lever.co",
+    "kula.ai",
     "ashbyhq.com",
     "myworkdayjobs.com",
     "smartrecruiters.com",
@@ -83,6 +84,75 @@ def looks_like_job_href(absolute: str, page_host: str) -> bool:
         return True
     needle = f"{parsed.path}?{parsed.query}"
     return bool(_JOB_PATH_OR_QUERY.search(needle))
+
+
+def path_is_job_listing_index(path: str) -> bool:
+    """True for hub URLs like /careers/jobs or /jobs (not /careers/jobs/123-role)."""
+    parts = [p for p in path.rstrip("/").lower().split("/") if p]
+    if not parts:
+        return False
+    if parts[-1] not in ("job", "jobs"):
+        return False
+    if len(parts) == 1:
+        return True
+    return parts[-2] in ("career", "careers")
+
+
+def same_site_job_listing_urls(
+    html: str,
+    page_url: str,
+    *,
+    max_urls: int = 8,
+) -> list[str]:
+    """Same-host links that look like job listing index pages (follow from marketing /careers/)."""
+    soup = BeautifulSoup(html, "lxml")
+    host = urlparse(page_url).netloc.lower()
+    seen: set[str] = set()
+    out: list[str] = []
+    for a in soup.find_all("a", href=True):
+        href = (a["href"] or "").strip()
+        if not href or BAD_HREF_HINTS.search(href):
+            continue
+        absolute = urljoin(page_url, href)
+        parsed = urlparse(absolute)
+        if parsed.netloc.lower() != host:
+            continue
+        if not path_is_job_listing_index(parsed.path):
+            continue
+        clean = absolute.split("#")[0].strip()
+        if clean not in seen:
+            seen.add(clean)
+            out.append(clean)
+        if len(out) >= max_urls:
+            break
+    return out
+
+
+def dedupe_jobs_by_url(jobs: list[dict]) -> list[dict]:
+    seen: set[str] = set()
+    out: list[dict] = []
+    for j in jobs:
+        u = (j.get("url") or "").strip()
+        if not u or u in seen:
+            continue
+        seen.add(u)
+        out.append(j)
+    return out
+
+
+def drop_redundant_listing_hubs(jobs: list[dict]) -> list[dict]:
+    """Remove listing-index stubs when we also harvested concrete role links."""
+    listing_urls = {
+        (j.get("url") or "").strip().rstrip("/")
+        for j in jobs
+        if path_is_job_listing_index(urlparse(j.get("url") or "").path)
+    }
+    if len(listing_urls) == 0 or len(jobs) <= 1:
+        return jobs
+    non_listing = [
+        j for j in jobs if (j.get("url") or "").strip().rstrip("/") not in listing_urls
+    ]
+    return non_listing if non_listing else jobs
 
 
 def harvest_job_links(

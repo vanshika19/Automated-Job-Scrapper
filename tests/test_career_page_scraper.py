@@ -162,6 +162,31 @@ def test_drops_excessively_long_titles(stub_http_get, fake_response):
     assert [j["title"] for j in out] == ["Real Job"]
 
 
+def test_follows_careers_jobs_listing_on_same_site(stub_http_get, fake_response):
+    """Marketing /careers/ links to /careers/jobs/ — fetch listing page for role anchors."""
+    hub_html = '<html><body><a href="/careers/jobs/">See open positions</a></body></html>'
+    listing_html = """<html><body>
+      <a href="/careers/jobs/482-product">Product Lead</a>
+    </body></html>"""
+    base = "https://www.acko.example/careers/"
+    calls: list[str] = []
+
+    def route(url: str):
+        calls.append(url)
+        if url.rstrip("/").endswith("/careers"):
+            return fake_response(hub_html)
+        if "/careers/jobs" in url:
+            return fake_response(listing_html)
+        return fake_response("")
+
+    stub_http_get(route)
+    company = Company(name="Acko", careers_url=base, segment="Fintech")
+    out = CareerPageScraper(playwright_fallback=False).fetch(company)
+
+    assert len(calls) == 2
+    assert any(j["title"] == "Product Lead" for j in out)
+
+
 def test_returned_dict_shape(stub_http_get, fake_response):
     """Every returned dict has the keys the parser/pipeline expects."""
     html = '<a href="/careers/role">Role</a>'

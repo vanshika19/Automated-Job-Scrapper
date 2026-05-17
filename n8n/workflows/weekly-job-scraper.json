@@ -1,0 +1,140 @@
+{
+  "name": "Job Scraper Weekly",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 0"
+            }
+          ]
+        }
+      },
+      "id": "weekly-cron",
+      "name": "Weekly Sun 08:00 UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "command": "=cd {{ $env.JOB_SCRAPER_ROOT }} && export DATABASE_URL=sqlite:///jobs.db && make scrape-step-ats"
+      },
+      "id": "step-ats",
+      "name": "1) ATS",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [280, 300]
+    },
+    {
+      "parameters": {
+        "command": "=cd {{ $env.JOB_SCRAPER_ROOT }} && export DATABASE_URL=sqlite:///jobs.db && make scrape-step-career"
+      },
+      "id": "step-career",
+      "name": "2) Career pages",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [520, 300]
+    },
+    {
+      "parameters": {
+        "command": "=cd {{ $env.JOB_SCRAPER_ROOT }} && export DATABASE_URL=sqlite:///jobs.db && make scrape-step-playwright"
+      },
+      "id": "step-pw",
+      "name": "3) Playwright",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [760, 300]
+    },
+    {
+      "parameters": {
+        "command": "=cd {{ $env.JOB_SCRAPER_ROOT }} && export DATABASE_URL=sqlite:///jobs.db && make scrape-step-linkedin"
+      },
+      "id": "step-li",
+      "name": "4) LinkedIn jobs (Apify)",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "command": "=cd {{ $env.JOB_SCRAPER_ROOT }} && export DATABASE_URL=sqlite:///jobs.db && make scrape-step-linkedin-posts"
+      },
+      "id": "step-lip",
+      "name": "5) LinkedIn posts (Apify)",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1240, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Sun 08:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "1) ATS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1) ATS": {
+      "main": [
+        [
+          {
+            "node": "2) Career pages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2) Career pages": {
+      "main": [
+        [
+          {
+            "node": "3) Playwright",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3) Playwright": {
+      "main": [
+        [
+          {
+            "node": "4) LinkedIn jobs (Apify)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4) LinkedIn jobs (Apify)": {
+      "main": [
+        [
+          {
+            "node": "5) LinkedIn posts (Apify)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "versionId": "00000000-0000-4000-8000-000000000001"
+}

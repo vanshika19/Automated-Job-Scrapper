@@ -1,0 +1,72 @@
+# Weekly scrape with one GitHub Actions step per source (free UI: green/red + logs per step).
+#
+# Secrets (repo → Settings → Secrets and variables → Actions):
+#   APIFY_TOKEN          — required for LinkedIn Apify steps
+#   DATABASE_URL         — optional; if unset, uses ephemeral sqlite:///jobs.db in the runner
+#                         (data is lost when the job ends). For persistence use Postgres URL.
+#
+# Other LinkedIn / posts env vars: add as encrypted secrets and map them under each step's `env:`.
+#
+# n8n note: self-hosted n8n is free; n8n Cloud is paid. See automation/README.md
+
+name: Weekly job scrape
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Monday 06:00 UTC — edit cron as you like
+    - cron: "0 6 * * 1"
+
+concurrency:
+  group: weekly-scrape-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install project (venv + pip)
+        run: make install
+
+      - name: Playwright Chromium + OS deps (CI)
+        run: .venv/bin/python -m playwright install --with-deps chromium
+
+      - name: "Scraper: ATS"
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: make scrape-step-ats
+
+      - name: "Scraper: career pages"
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: make scrape-step-career
+
+      - name: "Scraper: Playwright"
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: make scrape-step-playwright
+
+      - name: "Scraper: LinkedIn jobs (Apify)"
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: make scrape-step-linkedin
+
+      - name: "Scraper: LinkedIn posts (Apify)"
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: make scrape-step-linkedin-posts

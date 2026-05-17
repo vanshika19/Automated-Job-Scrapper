@@ -63,10 +63,14 @@ jobs:
         env:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          LINKEDIN_APIFY_GENERIC_SEARCH: ${{ secrets.LINKEDIN_APIFY_GENERIC_SEARCH }}
+          LINKEDIN_APIFY_TITLE: ${{ secrets.LINKEDIN_APIFY_TITLE }}
+          LINKEDIN_APIFY_LOCATION: ${{ secrets.LINKEDIN_APIFY_LOCATION }}
         run: make scrape-step-linkedin
 
       - name: "Scraper: LinkedIn posts (Apify)"
         env:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          LINKEDIN_POSTS_STANDALONE: "1"
         run: make scrape-step-linkedin-posts

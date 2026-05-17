@@ -1,4 +1,4 @@
-"""LinkedIn company page posts via Apify (company feed, not job listings).
+"""LinkedIn profile or company posts via Apify (feed posts, not job listings).
 
 Actor console: https://console.apify.com/actors/A3cAPGpwBEG8RJwse/input
 
@@ -52,7 +52,7 @@ _DEFAULT_INPUT: dict[str, Any] = {
 
 
 def normalize_linkedin_company_page_url(url: str) -> str:
-    """Normalize to ``https://www.linkedin.com/company/{slug}/`` for Apify ``targetUrls``."""
+    """Normalize company or profile URL for Apify ``targetUrls``."""
     u = (url or "").strip()
     if not u:
         return ""
@@ -66,14 +66,20 @@ def normalize_linkedin_company_page_url(url: str) -> str:
     path = (parsed.path or "").rstrip("/")
     path = re.sub(r"/posts(?:/.*)?$", "", path, flags=re.I)
     path = re.sub(r"/jobs/?$", "", path)
-    if "/company/" not in path:
-        return ""
-    return f"{scheme}://{netloc}{path}/"
+    if "/company/" in path:
+        return f"{scheme}://{netloc}{path}/"
+    m = re.search(r"(/in/[^/?#]+)", path, re.I)
+    if m:
+        return f"{scheme}://{netloc}{m.group(1)}/"
+    return ""
 
 
 def _slug_from_company_url(normalized_url: str) -> str:
-    m = re.search(r"/company/([^/?#]+)", normalized_url, re.I)
-    return (m.group(1) if m else "").strip() or "linkedin"
+    for pattern in (r"/company/([^/?#]+)", r"/in/([^/?#]+)"):
+        m = re.search(pattern, normalized_url, re.I)
+        if m:
+            return m.group(1).strip() or "linkedin"
+    return "linkedin"
 
 
 def _resolve_targets_path(raw: str) -> Path:

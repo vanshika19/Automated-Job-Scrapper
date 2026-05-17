@@ -25,6 +25,19 @@ def test_normalize_company_page_strips_jobs():
     )
 
 
+def test_normalize_profile_url():
+    assert (
+        normalize_linkedin_company_page_url("https://www.linkedin.com/in/malay-krishna/")
+        == "https://www.linkedin.com/in/malay-krishna/"
+    )
+    assert (
+        normalize_linkedin_company_page_url(
+            "https://www.linkedin.com/in/malay-krishna/recent-activity/all/"
+        )
+        == "https://www.linkedin.com/in/malay-krishna/"
+    )
+
+
 def test_normalize_company_page_strips_posts_and_query():
     assert (
         normalize_linkedin_company_page_url(
@@ -60,7 +73,8 @@ def test_load_standalone_companies(monkeypatch):
     monkeypatch.setenv("LINKEDIN_POSTS_TARGET_URLS_FILE", "config/linkedin_posts_targets.txt")
     companies = load_standalone_post_companies()
     assert companies is not None
-    assert len(companies) == 5
+    assert len(companies) == 6
+    assert any(c.name == "malay-krishna" for c in companies)
     assert companies[0].name == "pm-interview-prep-club"
     assert companies[0].linkedin_url == "https://www.linkedin.com/company/pm-interview-prep-club/"
 

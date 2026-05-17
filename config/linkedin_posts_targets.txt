@@ -1,5 +1,5 @@
-# LinkedIn company pages for Apify actor A3cAPGpwBEG8RJwse (linkedin_posts source).
-# One URL per line. /posts/ and ?feedView= are stripped; paths become company roots.
+# LinkedIn company pages or personal profiles for Apify harvestapi/linkedin-profile-posts.
+# One URL per line. /posts/ and /jobs/ are stripped; company and /in/ profile roots are kept.
 #
 # Enable in .env:  LINKEDIN_POSTS_STANDALONE=1
 # Run:  python -m job_scraper scrape --source linkedin_posts
@@ -10,3 +10,4 @@ https://www.linkedin.com/company/adwordtv/posts/
 https://www.linkedin.com/company/founders-office-club/posts/
 https://www.linkedin.com/company/vcjobsio/posts/?feedView=all
 https://www.linkedin.com/company/finance-jobs-vacancies/posts/?feedView=all
+https://www.linkedin.com/in/malay-krishna/

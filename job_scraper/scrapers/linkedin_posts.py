@@ -45,7 +45,7 @@ _DEFAULT_INPUT: dict[str, Any] = {
     "maxReactions": 5,
     "postNestedComments": False,
     "postNestedReactions": False,
-    "postedLimit": "1months",
+    "postedLimit": "month",
     "scrapeComments": False,
     "scrapeReactions": False,
 }

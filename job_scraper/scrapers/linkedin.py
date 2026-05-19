@@ -29,14 +29,40 @@ from .pw_sync_runner import get_sync_playwright, run_playwright_sync
 
 LOG = logging.getLogger(__name__)
 
-# Default matches 🔥 LinkedIn Jobs Scraper (Actor ID BHzefUZlZRKWxkTck, username bebity~linkedin-jobs-scraper).
-# Set ``APIFY_LINKEDIN_ACTOR=BHzefUZlZRKWxkTck`` to pin the console ID — both resolve to the same actor.
-_DEFAULT_LINKEDIN_ACTOR = "bebity~linkedin-jobs-scraper"
+# Jobs actors (set ``APIFY_LINKEDIN_ACTOR`` to either ID or ``username~name`` slug):
+#   - worldunboxer~rapid-linkedin-scraper  /  JkfTWxtpgfvcRQn3p  (Rapid LinkedIn Jobs Scraper)
+#   - bebity~linkedin-jobs-scraper       /  BHzefUZlZRKWxkTck  (legacy default)
+_DEFAULT_LINKEDIN_ACTOR = "JkfTWxtpgfvcRQn3p"
+_RAPID_LINKEDIN_ACTOR_MARKERS = (
+    "jkftwxtpgfvcrqn3p",
+    "rapid-linkedin-scraper",
+    "worldunboxer~rapid-linkedin-scraper",
+)
+_BEBITY_LINKEDIN_ACTOR_MARKERS = (
+    "bhzefuzlzrkwkxtck",
+    "bebity~linkedin-jobs-scraper",
+    "linkedin-jobs-scraper",
+)
 APIFY_RUN_URL = (
     "https://api.apify.com/v2/acts/{actor}/run-sync-get-dataset-items?token={token}"
 )
 
 _LI_VIEW = re.compile(r"linkedin\.com/jobs/view/(\d+)", re.I)
+_MIN_APIFY_JOBS_ENTRIES = 100
+_DEFAULT_APIFY_JOBS_ENTRIES = 100
+_MAX_APIFY_JOBS_ENTRIES = 1000
+
+
+def apify_jobs_entries_count(*, fallback: int | None = None) -> int:
+    """Jobs to request per Apify call (``jobs_entries`` / ``rows``). At least 100."""
+    raw = os.environ.get("LINKEDIN_APIFY_JOBS_ENTRIES", "").strip()
+    if raw:
+        n = int(raw)
+    elif fallback is not None:
+        n = fallback
+    else:
+        n = _DEFAULT_APIFY_JOBS_ENTRIES
+    return max(_MIN_APIFY_JOBS_ENTRIES, min(n, _MAX_APIFY_JOBS_ENTRIES))
 
 
 def _apify_csv_segments(raw: str | None) -> list[str] | None:
@@ -57,9 +83,112 @@ def _apify_enabled_generic() -> bool:
     )
 
 
+def _uses_rapid_linkedin_jobs_actor(actor: str) -> bool:
+    a = (actor or "").strip().lower()
+    return any(m in a for m in _RAPID_LINKEDIN_ACTOR_MARKERS)
+
+
+def _uses_bebity_linkedin_jobs_actor(actor: str) -> bool:
+    a = (actor or "").strip().lower()
+    if _uses_rapid_linkedin_jobs_actor(actor):
+        return False
+    return not a or any(m in a for m in _BEBITY_LINKEDIN_ACTOR_MARKERS)
+
+
+def _apify_extra_input_json() -> dict[str, Any]:
+    raw = os.environ.get("LINKEDIN_APIFY_INPUT_JSON", "").strip()
+    if not raw:
+        return {}
+    try:
+        loaded = json.loads(raw)
+        if isinstance(loaded, dict):
+            return loaded
+        LOG.warning("LINKEDIN_APIFY_INPUT_JSON must be a JSON object; ignoring")
+    except json.JSONDecodeError:
+        LOG.warning("LINKEDIN_APIFY_INPUT_JSON is not valid JSON; ignoring")
+    return {}
+
+
+def _build_apify_jobs_payload(
+    actor: str,
+    *,
+    title: str,
+    location: str,
+    rows: int,
+    company: Company,
+    generic: bool,
+) -> dict[str, Any]:
+    """Actor-specific body for ``run-sync-get-dataset-items``."""
+    extra = _apify_extra_input_json()
+    entries = apify_jobs_entries_count(fallback=rows)
+    if _uses_rapid_linkedin_jobs_actor(actor):
+        payload: dict[str, Any] = {
+            "job_title": title,
+            "location": location,
+            "jobs_entries": entries,
+            "start_jobs": int(os.environ.get("LINKEDIN_APIFY_START_JOBS", "0")),
+        }
+        if not generic:
+            payload["company_names"] = [company.name.strip()]
+        return {**payload, **extra}
+
+    # bebity~linkedin-jobs-scraper (legacy schema)
+    payload = {"rows": entries, "title": title, "location": location}
+    if not generic:
+        payload["companyName"] = [company.name.strip()]
+    proxy_raw = os.environ.get("LINKEDIN_APIFY_PROXY_JSON", "").strip()
+    if proxy_raw:
+        try:
+            payload["proxy"] = json.loads(proxy_raw)
+        except json.JSONDecodeError:
+            LOG.warning("LINKEDIN_APIFY_PROXY_JSON is not valid JSON; skipping proxy block")
+    return {**payload, **extra}
+
+
+def apify_item_to_job_dict(item: dict[str, Any]) -> dict[str, Any]:
+    """Normalize Apify job records (bebity or Rapid scraper) into pipeline dicts."""
+    emp = _employer_from_apify_item(item)
+    title = (
+        item.get("title")
+        or item.get("Job Title")
+        or item.get("job_title")
+        or item.get("position")
+        or item.get("jobTitle")
+    )
+    url = (
+        item.get("applyUrl")
+        or item.get("Apply Url")
+        or item.get("Job Url")
+        or item.get("job_url")
+        or item.get("link")
+        or item.get("jobUrl")
+        or item.get("url")
+    )
+    location = item.get("location") or item.get("Job Location") or item.get("job_location")
+    description = item.get("description") or item.get("Job Description") or ""
+    posted = (
+        item.get("postedTime")
+        or item.get("postedAt")
+        or item.get("Time Posted")
+        or item.get("time_posted")
+        or ""
+    )
+    return {
+        "title": title,
+        "url": url,
+        "location": location,
+        "department": item.get("department") or "",
+        "description": description,
+        "posted_at": posted,
+        "__source__": "linkedin:apify",
+        "__employer__": emp,
+    }
+
+
 def _employer_from_apify_item(j: dict[str, Any]) -> str:
     for key in (
         "companyName",
+        "Company Name",
         "company",
         "hiringCompany",
         "organizationName",
@@ -167,7 +296,7 @@ def merge_linkedin_job_results(primary: list[dict], secondary: list[dict]) -> li
 class LinkedInScraper:
     name = "linkedin"
 
-    def __init__(self, *, token: str | None = None, max_items: int = 50) -> None:
+    def __init__(self, *, token: str | None = None, max_items: int = 1000) -> None:
         self.token = token or os.environ.get("APIFY_TOKEN", "").strip()
         self.max_items = max_items
         self._pw = None
@@ -201,7 +330,7 @@ class LinkedInScraper:
             ) from e
 
     def _fetch_apify(self, company: Company) -> list[dict]:
-        """Call Apify ``bebity~linkedin-jobs-scraper`` (global search or scoped to ``companyName``)."""
+        """Call configured Apify jobs actor (Rapid or bebity schema)."""
         generic = _apify_enabled_generic()
         if generic and self._generic_apify_done:
             return []
@@ -209,7 +338,7 @@ class LinkedInScraper:
             self._generic_apify_done = True
 
         actor = os.environ.get("APIFY_LINKEDIN_ACTOR", _DEFAULT_LINKEDIN_ACTOR).strip()
-        rows = max(1, min(self.max_items, 1000))
+        rows = apify_jobs_entries_count(fallback=self.max_items)
 
         title_env = os.environ.get("LINKEDIN_APIFY_TITLE")
         loc_env = os.environ.get("LINKEDIN_APIFY_LOCATION")
@@ -235,40 +364,15 @@ class LinkedInScraper:
                 label,
             )
 
-        base_payload: dict[str, Any] = {"rows": rows}
-        if not generic:
-            base_payload["companyName"] = [company.name.strip()]
-        else:
+        if generic:
             LOG.info(
-                "LinkedIn Apify generic search: %d title×location run(s), no companyName filter",
+                "LinkedIn Apify generic search: %d title×location run(s) via %s",
                 len(combos),
+                actor,
             )
-
-        proxy_raw = os.environ.get("LINKEDIN_APIFY_PROXY_JSON", "").strip()
-        if proxy_raw:
-            try:
-                base_payload["proxy"] = json.loads(proxy_raw)
-            except json.JSONDecodeError:
-                LOG.warning("LINKEDIN_APIFY_PROXY_JSON is not valid JSON; skipping proxy block")
 
         timeout_s = int(os.environ.get("LINKEDIN_APIFY_TIMEOUT_SEC", "300"))
         api_url = APIFY_RUN_URL.format(actor=actor, token=self.token)
-
-        def norm_job(j: dict) -> dict:
-            emp = _employer_from_apify_item(j)
-            return {
-                "title": j.get("title") or j.get("position") or j.get("jobTitle"),
-                "url": j.get("applyUrl")
-                or j.get("link")
-                or j.get("jobUrl")
-                or j.get("url"),
-                "location": j.get("location"),
-                "department": j.get("department") or "",
-                "description": j.get("description") or "",
-                "posted_at": j.get("postedTime") or j.get("postedAt") or "",
-                "__source__": "linkedin:apify",
-                "__employer__": emp,
-            }
 
         merged: list[dict] = []
         seen: set[str] = set()
@@ -283,7 +387,14 @@ class LinkedInScraper:
             return f"u:{u.lower()}"
 
         for title, location in combos:
-            payload = {**base_payload, "title": title, "location": location}
+            payload = _build_apify_jobs_payload(
+                actor,
+                title=title,
+                location=location,
+                rows=rows,
+                company=company,
+                generic=generic,
+            )
             try:
                 r = requests.post(api_url, json=payload, timeout=timeout_s)
                 r.raise_for_status()
@@ -299,7 +410,9 @@ class LinkedInScraper:
                 continue
 
             for j in data or []:
-                job = norm_job(j)
+                if not isinstance(j, dict):
+                    continue
+                job = apify_item_to_job_dict(j)
                 k = job_key(job)
                 if k and k not in seen:
                     seen.add(k)
@@ -370,6 +483,8 @@ class LinkedInScraper:
 
     def fetch(self, company: Company) -> list[dict]:
         generic = _apify_enabled_generic()
+        if generic and self._generic_apify_done:
+            return []
         if not generic and not _li_slug(company.linkedin_url):
             return []
 
@@ -379,7 +494,9 @@ class LinkedInScraper:
         else:
             LOG.debug("LinkedIn: no APIFY_TOKEN for %s", company.name)
 
-        pw_jobs = self._fetch_playwright(company)
+        pw_jobs: list[dict] = []
+        if not generic:
+            pw_jobs = self._fetch_playwright(company)
         if self.token and pw_jobs:
             LOG.debug(
                 "LinkedIn: merging Apify (%d) + page harvest (%d) for %s",

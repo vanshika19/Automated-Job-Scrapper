@@ -9,7 +9,11 @@ from job_scraper.parser import normalize
 from job_scraper.scrapers.linkedin import (
     LinkedInScraper,
     _apify_csv_segments,
+    _build_apify_jobs_payload,
     _employer_from_apify_item,
+    _uses_rapid_linkedin_jobs_actor,
+    apify_item_to_job_dict,
+    apify_jobs_entries_count,
     merge_linkedin_job_results,
     normalize_linkedin_jobs_url,
     parse_linkedin_company_jobs_html,
@@ -118,7 +122,47 @@ def test_normalize_prefers_employer_for_posting_company():
     assert job.company == "Real Employer"
 
 
+def test_apify_jobs_entries_count_minimum_100(monkeypatch):
+    monkeypatch.delenv("LINKEDIN_APIFY_JOBS_ENTRIES", raising=False)
+    assert apify_jobs_entries_count(fallback=25) == 100
+    assert apify_jobs_entries_count() == 100
+    monkeypatch.setenv("LINKEDIN_APIFY_JOBS_ENTRIES", "250")
+    assert apify_jobs_entries_count() == 250
+
+
+def test_rapid_actor_payload_schema():
+    c = Company(name="Acme", careers_url="", linkedin_url="", country="", segment="")
+    p = _build_apify_jobs_payload(
+        "JkfTWxtpgfvcRQn3p",
+        title="product manager",
+        location="India",
+        rows=25,
+        company=c,
+        generic=True,
+    )
+    assert _uses_rapid_linkedin_jobs_actor("JkfTWxtpgfvcRQn3p")
+    assert p["job_title"] == "product manager"
+    assert p["location"] == "India"
+    assert p["jobs_entries"] == 100
+    assert "company_names" not in p
+
+
+def test_apify_item_to_job_dict_rapid_columns():
+    row = apify_item_to_job_dict(
+        {
+            "Job Title": "PM",
+            "Job Url": "https://www.linkedin.com/jobs/view/1",
+            "Company Name": "Stripe",
+            "Job Location": "Bengaluru",
+        }
+    )
+    assert row["title"] == "PM"
+    assert row["url"] == "https://www.linkedin.com/jobs/view/1"
+    assert row["__employer__"] == "Stripe"
+
+
 def test_generic_apify_omits_company_name_and_calls_once(monkeypatch):
+    monkeypatch.setenv("APIFY_LINKEDIN_ACTOR", "bebity~linkedin-jobs-scraper")
     monkeypatch.setenv("LINKEDIN_APIFY_GENERIC_SEARCH", "1")
     monkeypatch.setenv("LINKEDIN_APIFY_TITLE", "product manager")
     monkeypatch.setenv("LINKEDIN_APIFY_LOCATION", "India")

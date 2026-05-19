@@ -111,7 +111,7 @@ def test_linkedin_posts_scraper_calls_apify_with_target_urls():
     kwargs = post.call_args.kwargs
     assert kwargs["json"]["targetUrls"] == ["https://www.linkedin.com/company/acme/"]
     assert kwargs["json"]["maxPosts"] == 50
-    assert kwargs["json"]["postedLimit"] == "1months"
+    assert kwargs["json"]["postedLimit"] == "month"
     assert len(rows) == 1
     assert rows[0]["title"] == "Hi"
 

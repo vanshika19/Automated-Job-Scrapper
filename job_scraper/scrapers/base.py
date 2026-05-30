@@ -47,3 +47,29 @@ def http_get(
         time.sleep(backoff * (attempt + 1))
     LOG.debug("GET failed for %s: %s", url, last_err)
     return None
+
+
+def http_post(
+    url: str,
+    *,
+    json: dict | None = None,
+    headers: dict | None = None,
+    timeout: float = 15.0,
+    retries: int = 2,
+    backoff: float = 0.6,
+) -> requests.Response | None:
+    h = {**DEFAULT_HEADERS, "Content-Type": "application/json", **(headers or {})}
+    last_err: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            r = requests.post(url, json=json, headers=h, timeout=timeout)
+            if r.status_code == 200:
+                return r
+            if r.status_code in (404, 410):
+                return None
+            last_err = RuntimeError(f"HTTP {r.status_code}")
+        except requests.RequestException as e:
+            last_err = e
+        time.sleep(backoff * (attempt + 1))
+    LOG.debug("POST failed for %s: %s", url, last_err)
+    return None
